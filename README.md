@@ -14,32 +14,80 @@ This deployment consists of 5 services:
 | **mautic_cron** | Background task scheduler | - |
 | **mautic_worker** | RabbitMQ queue consumer | - |
 
-## Quick Start
+## Quick Start (Coolify Deployment)
 
-### 1. Deploy in Coolify
+### Prerequisites
 
-1. Create a new project in Coolify
-2. Create a new service using "Docker Compose" type
-3. Paste the contents of `docker-compose.yml`
-4. Configure environment variables (Coolify will auto-generate passwords)
-5. Deploy
+- A Coolify instance with access to create services
+- At least 4GB RAM available for the stack
+- A domain name configured for Mautic web service
 
-### 2. Initial Installation
+### Deployment Steps
 
-On first deployment, enable migrations:
+1. **Clone this repository**:
+   ```bash
+   git clone https://github.com/proofoftom/mautic-coolify2.git
+   cd mautic-coolify2
+   ```
 
-```bash
-# In Coolify environment variables, set:
-MAUTIC_RUN_MIGRATIONS=true
-```
+2. **Create a new service in Coolify**:
+   - Go to your Coolify dashboard
+   - Select the "local-sales-funnel" project → "production" environment
+   - Click "New Service" → "Docker Compose"
+   - Copy and paste the contents of [`docker-compose-coolify.yml`](docker-compose-coolify.yml) (simplified version without YAML anchors)
 
-Then access your Mautic instance at the configured domain to complete the web-based installation.
+3. **Configure environment variables in Coolify**:
+   Required for initial installation:
+   ```
+   MAUTIC_RUN_MIGRATIONS=true
+   ```
+   
+   Required for RabbitMQ queues:
+   ```
+   MAUTIC_MESSENGER_DSN_EMAIL=amqp://rabbitmq:5672/%2Fmautic?queue=email
+   MAUTIC_MESSENGER_DSN_HIT=amqp://rabbitmq:5672/%2Fmautic?queue=hit
+   ```
+
+4. **Deploy the service**:
+   - Click "Deploy" in Coolify
+   - Wait for all services to become healthy
+   - Access Mautic at your configured domain
+
+5. **Complete the web-based installation**:
+   - Open your browser to the configured domain
+   - Complete the installation wizard
+   - Set up your admin account
+
+6. **After installation, disable migrations**:
+   - Set `MAUTIC_RUN_MIGRATIONS=false` in Coolify environment variables
+   - Redeploy to apply the change
+
+### Manual Docker Compose Deployment
+
+For local testing without Coolify, you can use Docker Compose directly:
+
+1. **Create environment file** (optional):
+   ```bash
+   cp .env.example .env
+   # Edit .env with your values
+   ```
+
+2. **Start the stack**:
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Access Mautic**:
+   - Open your browser to `http://localhost` or your configured domain
+   - Complete the web-based installation wizard
+   - Set up your admin account
 
 ## Directory Structure
 
 ```
 mautic-coolify/
-├── docker-compose.yml          # Coolify compose file
+├── docker-compose-coolify.yml  # Coolify compose file (simplified, no YAML anchors)
+├── docker-compose.yml           # Original compose file (with YAML anchors)
 ├── docker/                     # Custom Docker build files
 │   ├── Dockerfile              # Multi-stage Dockerfile for Mautic 7.x
 │   ├── common/
@@ -219,7 +267,7 @@ The `mautic_cron` service automatically runs these essential cron jobs:
 
 To upgrade Mautic to a new version:
 
-1. Update the `MAUTIC_VERSION` build arg in `docker-compose.yml` or `Dockerfile`
+1. Update the `MAUTIC_VERSION` build arg in [`docker-compose.yml`](docker-compose.yml) or [`Dockerfile`](docker/Dockerfile)
 2. In Coolify, trigger a redeploy with force rebuild
 3. Containers will automatically apply database migrations
 4. Verify health checks pass
