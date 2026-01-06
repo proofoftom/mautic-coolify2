@@ -1,0 +1,182 @@
+# documentation: https://www.mautic.org/
+# slogan: Mautic v7 Open Source Marketing Automation
+# category: analytics
+# tags: php,mautic,marketing,automation,email,service,7,open,source,crm
+# logo: svgs/mautic.svg
+# port: 80
+
+x-mautic-volumes: &mautic-volumes
+  - ./mautic/config:/var/www/html/config:z
+  - ./mautic/logs:/var/www/html/var/logs:z
+  - ./mautic/media/files:/var/www/html/docroot/media/files:z
+  - ./mautic/media/images:/var/www/html/docroot/media/images:z
+  - ./themes:/var/www/html/docroot/themes:z
+  - ./plugins:/var/www/html/docroot/plugins:z
+
+services:
+  mysql:
+    image: 'mysql:8.0'
+    environment:
+      - 'MYSQL_ROOT_PASSWORD=${SERVICE_PASSWORD_64_MYSQLROOT}'
+      - 'MYSQL_DATABASE=${MYSQL_DATABASE:-mautic}'
+      - 'MYSQL_USER=${SERVICE_USER_MYSQL}'
+      - 'MYSQL_PASSWORD=${SERVICE_PASSWORD_64_MYSQL}'
+    volumes:
+      - 'mysql-data:/var/lib/mysql'
+    healthcheck:
+      test: 'mysqladmin ping --silent --user=$$SERVICE_USER_MYSQL --password=$$SERVICE_PASSWORD_64_MYSQL'
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    networks:
+      - default
+
+  rabbitmq:
+    image: 'rabbitmq:3'
+    environment:
+      - 'RABBITMQ_DEFAULT_USER=${SERVICE_USER_RABBITMQ:-mautic}'
+      - 'RABBITMQ_DEFAULT_PASS=${SERVICE_PASSWORD_64_RABBITMQ}'
+      - 'RABBITMQ_DEFAULT_VHOST=${RABBITMQ_DEFAULT_VHOST:-mautic}'
+    volumes:
+      - 'rabbitmq-data:/var/lib/rabbitmq'
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      start_period: 30s
+      interval: 5s
+      timeout: 30s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    networks:
+      - default
+
+  mautic_web:
+    image: 'mautic-coolify:7-apache'
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+      args:
+        MAUTIC_VERSION: 7.x-dev
+    volumes:
+      *mautic-volumes
+    environment:
+      - SERVICE_URL_MAUTIC_80
+      - 'DOCKER_MAUTIC_LOAD_TEST_DATA=${MAUTIC_LOAD_TEST_DATA:-false}'
+      - 'DOCKER_MAUTIC_RUN_MIGRATIONS=${MAUTIC_RUN_MIGRATIONS:-false}'
+      - 'MAUTIC_DB_HOST=${MYSQL_HOST:-mysql}'
+      - 'MAUTIC_DB_PORT=${MYSQL_PORT:-3306}'
+      - 'MAUTIC_DB_DATABASE=${MYSQL_DATABASE:-mautic}'
+      - 'MAUTIC_DB_USER=${SERVICE_USER_MYSQL}'
+      - 'MAUTIC_DB_PASSWORD=${SERVICE_PASSWORD_64_MYSQL}'
+      - 'MAUTIC_MESSENGER_DSN_EMAIL=${MAUTIC_MESSENGER_DSN_EMAIL:-amqp://${SERVICE_USER_RABBITMQ:-mautic}:${SERVICE_PASSWORD_64_RABBITMQ}@rabbitmq:5672/${RABBITMQ_DEFAULT_VHOST:-mautic}/messages}'
+      - 'MAUTIC_MESSENGER_DSN_HIT=${MAUTIC_MESSENGER_DSN_HIT:-amqp://${SERVICE_USER_RABBITMQ:-mautic}:${SERVICE_PASSWORD_64_RABBITMQ}@rabbitmq:5672/${RABBITMQ_DEFAULT_VHOST:-mautic}/messages}'
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - '-f'
+        - 'http://localhost'
+      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - default
+
+  mautic_cron:
+    image: 'mautic-coolify:7-apache'
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+      args:
+        MAUTIC_VERSION: 7.x-dev
+    volumes:
+      *mautic-volumes
+    environment:
+      - DOCKER_MAUTIC_ROLE=mautic_cron
+      - 'MAUTIC_DB_HOST=${MYSQL_HOST:-mysql}'
+      - 'MAUTIC_DB_PORT=${MYSQL_PORT:-3306}'
+      - 'MAUTIC_DB_DATABASE=${MYSQL_DATABASE:-mautic}'
+      - 'MAUTIC_DB_USER=${SERVICE_USER_MYSQL}'
+      - 'MAUTIC_DB_PASSWORD=${SERVICE_PASSWORD_64_MYSQL}'
+      - 'MAUTIC_MESSENGER_DSN_EMAIL=${MAUTIC_MESSENGER_DSN_EMAIL:-amqp://${SERVICE_USER_RABBITMQ:-mautic}:${SERVICE_PASSWORD_64_RABBITMQ}@rabbitmq:5672/${RABBITMQ_DEFAULT_VHOST:-mautic}/messages}'
+      - 'MAUTIC_MESSENGER_DSN_HIT=${MAUTIC_MESSENGER_DSN_HIT:-amqp://${SERVICE_USER_RABBITMQ:-mautic}:${SERVICE_PASSWORD_64_RABBITMQ}@rabbitmq:5672/${RABBITMQ_DEFAULT_VHOST:-mautic}/messages}'
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 5s
+      timeout: 10s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      mautic_web:
+        condition: service_healthy
+    networks:
+      - default
+
+  mautic_worker:
+    image: 'mautic-coolify:7-apache'
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+      args:
+        MAUTIC_VERSION: 7.x-dev
+    volumes:
+      *mautic-volumes
+    environment:
+      - DOCKER_MAUTIC_ROLE=mautic_worker
+      - 'DOCKER_MAUTIC_WORKERS_CONSUME_EMAIL=${DOCKER_MAUTIC_WORKERS_CONSUME_EMAIL:-2}'
+      - 'DOCKER_MAUTIC_WORKERS_CONSUME_HIT=${DOCKER_MAUTIC_WORKERS_CONSUME_HIT:-2}'
+      - 'DOCKER_MAUTIC_WORKERS_CONSUME_FAILED=${DOCKER_MAUTIC_WORKERS_CONSUME_FAILED:-2}'
+      - 'MAUTIC_DB_HOST=${MYSQL_HOST:-mysql}'
+      - 'MAUTIC_DB_PORT=${MYSQL_PORT:-3306}'
+      - 'MAUTIC_DB_DATABASE=${MYSQL_DATABASE:-mautic}'
+      - 'MAUTIC_DB_USER=${SERVICE_USER_MYSQL}'
+      - 'MAUTIC_DB_PASSWORD=${SERVICE_PASSWORD_64_MYSQL}'
+      - 'MAUTIC_MESSENGER_DSN_EMAIL=${MAUTIC_MESSENGER_DSN_EMAIL:-amqp://${SERVICE_USER_RABBITMQ:-mautic}:${SERVICE_PASSWORD_64_RABBITMQ}@rabbitmq:5672/${RABBITMQ_DEFAULT_VHOST:-mautic}/messages}'
+      - 'MAUTIC_MESSENGER_DSN_HIT=${MAUTIC_MESSENGER_DSN_HIT:-amqp://${SERVICE_USER_RABBITMQ:-mautic}:${SERVICE_PASSWORD_64_RABBITMQ}@rabbitmq:5672/${RABBITMQ_DEFAULT_VHOST:-mautic}/messages}'
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 5s
+      timeout: 10s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    depends_on:
+      mautic_web:
+        condition: service_healthy
+    networks:
+      - default
+
+volumes:
+  mysql-data:
+  rabbitmq-data:
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-mautic-coolify}-docker

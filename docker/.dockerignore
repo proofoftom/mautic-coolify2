@@ -1,0 +1,14 @@
+.git
+.gitignore
+README.md
+.env
+.env.example
+*.md
+node_modules
+vendor
+var/cache
+var/logs
+mautic/
+themes/
+plugins/
+cron/
