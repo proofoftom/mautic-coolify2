@@ -125,7 +125,6 @@ COPY common/templates/php.ini /usr/local/etc/php/php.ini
 COPY --from=builder --chown=www-data:www-data /opt/mautic /var/www/html
 
 # Copy entrypoint scripts and templates from host
-COPY --chmod=755 common/startup/ /startup/
 COPY --chown=www-data:www-data --chmod=755 common/templates/ /templates/
 COPY --chmod=755 common/docker-entrypoint.sh /entrypoint.sh
 COPY --chmod=755 common/entrypoint_mautic_web.sh /entrypoint_mautic_web.sh
